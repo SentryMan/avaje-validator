@@ -6,12 +6,12 @@
   <parent>
     <groupId>org.avaje</groupId>
     <artifactId>java11-oss</artifactId>
-    <version>4.1</version>
+    <version>4.3</version>
   </parent>
 
   <groupId>io.avaje</groupId>
   <artifactId>avaje-validator-parent</artifactId>
-  <version>1.5-RC1</version>
+  <version>1.6-SNAPSHOT</version>
 
   <packaging>pom</packaging>
   <name>validator parent</name>
