@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
+import io.avaje.validation.adapter.ConstraintAdapter;
+import io.avaje.validation.groups.Default;
 import org.jspecify.annotations.Nullable;
 
 import io.avaje.validation.adapter.ValidationAdapter;
@@ -19,7 +21,6 @@ import io.avaje.validation.adapter.ValidationContext;
 import io.avaje.validation.core.adapters.BasicAdapters;
 import io.avaje.validation.core.adapters.FuturePastAdapterFactory;
 import io.avaje.validation.core.adapters.NumberAdapters;
-import io.avaje.validation.groups.Default;
 import io.avaje.validation.spi.AdapterFactory;
 import io.avaje.validation.spi.AnnotationFactory;
 
@@ -30,7 +31,7 @@ final class CoreAdapterBuilder {
   private final DValidator context;
   private final List<AdapterFactory> factories = new ArrayList<>();
   private final List<AnnotationFactory> annotationFactories = new ArrayList<>();
-  private final Map<Object, ValidationAdapter<?>> adapterCache = new ConcurrentHashMap<>();
+  private final Map<Type, ValidationAdapter<?>> adapterCache = new ConcurrentHashMap<>();
 
   CoreAdapterBuilder(
       DValidator context,
@@ -41,31 +42,29 @@ final class CoreAdapterBuilder {
     this.context = context;
     this.factories.addAll(userFactories);
     this.annotationFactories.addAll(userAnnotationFactories);
-    this.annotationFactories.add(BasicAdapters.FACTORY);
+    // bootstrap the builtin factories potentially with default adapters
+    // that use the default group and default message
+    var requestBuilder = new RequestBuilder(context);
+    this.annotationFactories.add(BasicAdapters.factory(requestBuilder));
     this.annotationFactories.add(NumberAdapters.FACTORY);
     this.annotationFactories.add(new FuturePastAdapterFactory(clockSupplier, temporalTolerance));
   }
 
-  /** Return the adapter from cache if exists else return null. */
+  /** Return the adapter from cache if exists creating the adapter if required. */
   @SuppressWarnings("unchecked")
-  <T> ValidationAdapter<T> get(Object cacheKey) {
-    return (ValidationAdapter<T>) adapterCache.get(cacheKey);
+  <T> ValidationAdapter<T> build(Type type) {
+    var adapter = adapterCache.get(type);
+    if (adapter != null) {
+      return (ValidationAdapter<T>)adapter;
+    }
+    ValidationAdapter<T> newValidator = buildForType(type);
+    adapterCache.put(type, newValidator);
+    return newValidator;
   }
 
   /** Build for the simple non-annotated type case. */
-  <T> ValidationAdapter<T> build(Type type) {
-    return build(type, type);
-  }
-
-  <T> ValidationAdapter<T> annotationAdapter(
-      Class<? extends Annotation> cls, Map<String, Object> attributes, Set<Class<?>> groups) {
-    return buildAnnotation(cls, attributes, groups);
-  }
-
-  /** Build given type and annotations. */
-  // TODO understand that lookup chain stuff
   @SuppressWarnings("unchecked")
-  <T> ValidationAdapter<T> build(Type type, Object cacheKey) {
+  private <T> ValidationAdapter<T> buildForType(Type type) {
     // Ask each factory to create the validation adapter.
     for (final AdapterFactory factory : factories) {
       final var result = (ValidationAdapter<T>) factory.create(type, context);
@@ -76,12 +75,14 @@ final class CoreAdapterBuilder {
     throw new IllegalArgumentException("No ValidationAdapter for " + type + ". Perhaps needs @Valid or @Valid.Import?");
   }
 
+  <T> ValidationAdapter<T> annotationAdapter(
+      Class<? extends Annotation> cls, Map<String, Object> attributes, Set<Class<?>> groups) {
+    return buildAnnotation(cls, attributes, groups);
+  }
+
   /**
    * Build given type and annotations.
-   *
-   * @param groups
    */
-  // TODO understand that lookup chain stuff
   @SuppressWarnings("unchecked")
   <T> ValidationAdapter<T> buildAnnotation(
       Class<? extends Annotation> cls,
@@ -107,7 +108,22 @@ final class CoreAdapterBuilder {
     return NoOpValidator.INSTANCE;
   }
 
-  record Request(
+  private static final class RequestBuilder implements ValidationContext.RequestBuilder {
+
+    private final DValidator context;
+
+    private RequestBuilder(DValidator context) {
+      this.context = context;
+    }
+
+    @Override
+    public ValidationContext.AdapterCreateRequest defaultRequest(String defaultMessage) {
+      // ConstraintAdapter.class is just a placeholder and not meaningful
+      return new Request(context, ConstraintAdapter.class, DEFAULT_GROUP, Map.of("message", defaultMessage));
+    }
+  }
+
+  private record Request(
 
     ValidationContext ctx,
     Class<? extends Annotation> annotationType,
@@ -115,6 +131,11 @@ final class CoreAdapterBuilder {
     Map<String, Object> attributes
 
   ) implements ValidationContext.AdapterCreateRequest {
+
+    @Override
+    public boolean isDefaultGroupOnly() {
+      return DEFAULT_GROUP.equals(groups);
+    }
 
     @Override
     public String targetType() {
@@ -131,7 +152,6 @@ final class CoreAdapterBuilder {
     public Request withValue(long value) {
       Map<String, Object> newAttributes = new HashMap<>(attributes);
       newAttributes.put("value", value);
-      //newAttributes.put("_type", "Long");
       return new Request(ctx, annotationType, groups, newAttributes);
     }
 

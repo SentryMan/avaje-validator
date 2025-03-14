@@ -14,30 +14,75 @@ import io.avaje.validation.adapter.RegexFlag;
 import io.avaje.validation.adapter.ValidationAdapter;
 import io.avaje.validation.adapter.ValidationContext;
 import io.avaje.validation.adapter.ValidationContext.AdapterCreateRequest;
+import io.avaje.validation.adapter.ValidationContext.RequestBuilder;
 import io.avaje.validation.adapter.ValidationRequest;
 import io.avaje.validation.spi.AnnotationFactory;
 
 public final class BasicAdapters {
   private static final String LENGTH_MAX = "{avaje.Length.max.message}";
+  private static final String NOT_NULL_MESSAGE = "{avaje.NotNull.message}";
+  private static final String NULL_MESSAGE = "{avaje.Null.message}";
+  private static final String NOT_BLANK_MESSAGE = "{avaje.NotBlank.message}";
 
   private BasicAdapters() {}
 
-  public static final AnnotationFactory FACTORY =
-      request ->
-          switch (request.annotationType().getSimpleName()) {
-            case "Email" -> new EmailAdapter(request);
-            case "UUID" -> new UuidAdapter(request);
-            case "URI" -> new UriAdapter(request);
-            case "Null" -> new NullableAdapter(request, true);
-            case "NotNull", "NonNull" -> new NullableAdapter(request, false);
-            case "AssertTrue" -> new AssertBooleanAdapter(request, true);
-            case "AssertFalse" -> new AssertBooleanAdapter(request, false);
-            case "NotBlank" -> new NotBlankAdapter(request);
-            case "NotEmpty" -> new NotEmptyAdapter(request);
-            case "Pattern" -> new PatternAdapter(request);
-            case "Size", "Length" -> new SizeAdapter(request);
-            default -> null;
-          };
+  public static AnnotationFactory factory(RequestBuilder requestBuilder) {
+    return new Factory(requestBuilder);
+  }
+
+  private static final class Factory implements AnnotationFactory {
+
+    private final NullableAdapter defaultNotNullAdapter;
+    private final NullableAdapter defaultNullAdapter;
+    private final NotBlankAdapter defaultNotBlankAdapter;
+
+    Factory(RequestBuilder reqBuilder) {
+      // create default adapters that will be shared instances (when no groups or message customisation)
+      this.defaultNotNullAdapter = new NullableAdapter(reqBuilder.defaultRequest(NOT_NULL_MESSAGE), false);
+      this.defaultNullAdapter = new NullableAdapter(reqBuilder.defaultRequest(NULL_MESSAGE), true);
+      this.defaultNotBlankAdapter = new NotBlankAdapter(reqBuilder.defaultRequest(NOT_BLANK_MESSAGE));
+    }
+
+    @Override
+    public ValidationAdapter<?> create(AdapterCreateRequest request) {
+      return switch (request.annotationType().getSimpleName()) {
+          case "Email" -> new EmailAdapter(request);
+          case "UUID" -> new UuidAdapter(request);
+          case "URI" -> new UriAdapter(request);
+          case "Null" -> nullable(request);
+          case "NotNull", "NonNull" -> notNull(request);
+          case "AssertTrue" -> new AssertBooleanAdapter(request, true);
+          case "AssertFalse" -> new AssertBooleanAdapter(request, false);
+          case "NotBlank" -> notBlank(request);
+          case "NotEmpty" -> new NotEmptyAdapter(request);
+          case "Pattern" -> new PatternAdapter(request);
+          case "Size", "Length" -> new SizeAdapter(request);
+          case "Valid" -> new ValidAdapter(request);
+          default -> null;
+        };
+    }
+
+    private ValidationAdapter<?> notBlank(AdapterCreateRequest request) {
+      if (NotBlankAdapter.isDefault(request)) {
+        return defaultNotBlankAdapter;
+      }
+      return new NotBlankAdapter(request);
+    }
+
+    private ValidationAdapter<?> notNull(AdapterCreateRequest request) {
+      if (request.isDefaultGroupOnly() && NOT_NULL_MESSAGE.equals(request.attribute("message"))) {
+        return defaultNotNullAdapter;
+      }
+      return new NullableAdapter(request, false);
+    }
+
+    private ValidationAdapter<?> nullable(AdapterCreateRequest request) {
+      if (request.isDefaultGroupOnly() && NULL_MESSAGE.equals(request.attribute("message"))) {
+        return defaultNullAdapter;
+      }
+      return new NullableAdapter(request, true);
+    }
+  }
 
   static sealed class PatternAdapter extends AbstractConstraintAdapter<CharSequence>
       permits EmailAdapter {
@@ -63,7 +108,7 @@ public final class BasicAdapters {
 
     @Override
     public boolean isValid(CharSequence value) {
-      return value == null || !pattern.test(value.toString());
+      return !pattern.test(value.toString());
     }
   }
 
@@ -110,7 +155,6 @@ public final class BasicAdapters {
         final var len = sequence.length();
         if (len > max || len < min) {
           req.addViolation(message, propertyName);
-          return false;
         }
       } else if (value instanceof final Collection<?> col) {
         final var len = col.size();
@@ -153,6 +197,12 @@ public final class BasicAdapters {
       }
     }
 
+    private static boolean isDefault(AdapterCreateRequest request) {
+      return request.isDefaultGroupOnly()
+        && standardMessage(request)
+        && maxLength(request) == 0;
+    }
+
     private static int maxLength(AdapterCreateRequest request) {
       final Integer max = request.attribute("max");
       return Objects.requireNonNullElse(max, 0);
@@ -173,7 +223,6 @@ public final class BasicAdapters {
       }
       if (maxLength > 0 && value.length() > maxLength) {
         req.addViolation(maxLengthMessage != null ? maxLengthMessage : message, propertyName);
-        return false;
       }
       return true;
     }
@@ -192,26 +241,41 @@ public final class BasicAdapters {
     }
   }
 
-  private static final class NotEmptyAdapter extends AbstractConstraintAdapter<Object> {
+  private static final class NotEmptyAdapter implements ValidationAdapter<Object> {
+
+    private final ValidationContext.Message message;
+    private final Set<Class<?>> groups;
 
     NotEmptyAdapter(AdapterCreateRequest request) {
-      super(request);
+      this.groups = request.groups();
+      this.message = request.message();
     }
 
     @Override
-    public boolean isValid(Object value) {
-      if (value == null) {
+    public boolean validate(Object value, ValidationRequest req, String propertyName) {
+      if (!checkGroups(groups, req)) {
+        return true;
+      }
+      if (invalid(value)) {
+        req.addViolation(message, propertyName);
         return false;
-      } else if (value instanceof final Collection<?> col) {
-        return !col.isEmpty();
-      } else if (value instanceof final Map<?, ?> map) {
-        return !map.isEmpty();
-      } else if (value instanceof final CharSequence sequence) {
-        return sequence.length() != 0;
-      } else if (value.getClass().isArray()) {
-        return arrayLength(value) != 0;
       }
       return true;
+    }
+
+    private boolean invalid(Object value) {
+      if (value == null) {
+        return true;
+      } else if (value instanceof final Collection<?> col) {
+        return col.isEmpty();
+      } else if (value instanceof final Map<?, ?> map) {
+        return map.isEmpty();
+      } else if (value instanceof final CharSequence sequence) {
+        return sequence.isEmpty();
+      } else if (value.getClass().isArray()) {
+        return arrayLength(value) == 0;
+      }
+      return false;
     }
   }
 
@@ -226,7 +290,7 @@ public final class BasicAdapters {
 
     @Override
     public boolean isValid(Boolean value) {
-      return value == null || assertBool == value.booleanValue();
+      return assertBool == value;
     }
 
     @Override
@@ -235,18 +299,42 @@ public final class BasicAdapters {
     }
   }
 
-  private static final class NullableAdapter extends AbstractConstraintAdapter<Object> {
+  private static final class NullableAdapter implements ValidationAdapter<Object> {
 
     private final boolean shouldBeNull;
+    private final ValidationContext.Message message;
+    private final Set<Class<?>> groups;
 
     NullableAdapter(AdapterCreateRequest request, boolean shouldBeNull) {
-      super(request);
       this.shouldBeNull = shouldBeNull;
+      this.groups = request.groups();
+      this.message = request.message();
     }
 
     @Override
-    public boolean isValid(Object value) {
-      return (value == null) == shouldBeNull;
+    public boolean validate(Object value, ValidationRequest req, String propertyName) {
+      if (!checkGroups(groups, req)) {
+        return true;
+      }
+      if ((value == null) != shouldBeNull) {
+        req.addViolation(message, propertyName);
+        return false;
+      }
+      return true;
+    }
+  }
+
+  private static final class ValidAdapter implements ValidationAdapter<Object> {
+
+    private final Set<Class<?>> groups;
+
+    ValidAdapter(AdapterCreateRequest request) {
+      this.groups = request.groups();
+    }
+
+    @Override
+    public boolean validate(Object value, ValidationRequest req, String propertyName) {
+      return checkGroups(groups, req);
     }
   }
 

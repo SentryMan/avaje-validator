@@ -30,12 +30,11 @@ final class ComponentReader {
   private void readMetaData(TypeElement moduleType) {
     for (final AnnotationMirror annotationMirror : moduleType.getAnnotationMirrors()) {
       final MetaDataPrism metaData = MetaDataPrism.getInstance(annotationMirror);
-      final FactoryPrism metaDataFactory = FactoryPrism.getInstance(annotationMirror);
+      final ValidFactoryPrism metaDataFactory = ValidFactoryPrism.getInstance(annotationMirror);
       final AnnotationFactoryPrism metaDataAnnotationFactory = AnnotationFactoryPrism.getInstance(annotationMirror);
 
       if (metaData != null) {
         metaData.value().stream().map(TypeMirror::toString).forEach(componentMetaData::add);
-
       } else if (metaDataFactory != null) {
         metaDataFactory.value().stream().map(TypeMirror::toString).forEach(componentMetaData::add);
 
