@@ -50,46 +50,34 @@ jobs:
     #     MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
     #     MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-
     - name: Create Pull Request for Version Bump
       id: create-pr
       uses: peter-evans/create-pull-request@v6
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        commit-message: "Version ${{ github.event.inputs.new_version }}"
-        branch: "release/${{ github.event.inputs.new_version }}"
-        title: "Release: Version ${{ github.event.inputs.new_version }}"
-        body: |
-          Release version `${{ github.event.inputs.new_version }}` to be deployed.
-        base: main
+       token: ${{ secrets.GITHUB_TOKEN }}
+       commit-message: "Version ${{ github.event.inputs.new_version }}"
+       branch: "release/${{ github.event.inputs.new_version }}"
+       title: "Release: Version ${{ github.event.inputs.new_version }}"
+       body: |
+        Release version `${{ github.event.inputs.new_version }}` to be deployed.
+       base: main
+       draft: true
 
     - name: Configure Git
       run: |
-            git config --global user.email "action@github.com"
-            git config --global user.name "GitHub Action"
+             git config --global user.email "action@github.com"
+             git config --global user.name "GitHub Action"
 
-
-    - name: Trigger PR workflows by closing and reopening
+    - name: Enable auto-merge for draft PR
       if: steps.create-pr.outputs.pull-request-number
       run: |
-              # Close the PR
-              gh pr close ${{ steps.create-pr.outputs.pull-request-number }}
-
-              # Reopen the PR to trigger workflows
-              gh pr reopen ${{ steps.create-pr.outputs.pull-request-number }}
+        gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} --merge --auto
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Approve Pull Request
+    - name: Mark PR as ready for review to trigger workflows
       if: steps.create-pr.outputs.pull-request-number
       run: |
-        gh pr review ${{ steps.create-pr.outputs.pull-request-number }} --approve --body "Auto-approving release PR"
-      env:
-        GH_TOKEN: ${{ secrets.PAT }}
-
-    - name: Enable auto-merge for PR
-      if: steps.create-pr.outputs.pull-request-number
-      run: |
-        gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} --auto --squash
+        gh pr ready ${{ steps.create-pr.outputs.pull-request-number }}
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
