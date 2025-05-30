@@ -53,8 +53,5 @@ jobs:
           branch: automated-timestamp-update-${{ github.run_id }} # Unique branch name
           base: main # Or 'master' if that's your default branch
           delete-branch: true # Delete the branch after the PR is merged
-          labels: |
-            automated-pr
-            enhancement
           assignees: ${{ github.actor }} # Assign the user who triggered the workflow (optional)
           reviewers: ${{ github.actor }} # Request review from the user who triggered the workflow (optional)
