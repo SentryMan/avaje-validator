@@ -62,6 +62,10 @@ jobs:
           Release version `${{ github.event.inputs.new_version }}` to be deployed.
         base: main
 
+    - name: Configure Git
+      run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
     - name: Trigger PR workflows
       if: steps.create-pr.outputs.pull-request-number
       run: |
