@@ -97,4 +97,4 @@ jobs:
       run: |
         gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} --merge --auto
       env:
-        GH_TOKEN: ${{ secrets.PAT }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
