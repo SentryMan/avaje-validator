@@ -82,3 +82,5 @@ jobs:
 
           Please review these changes before merging.
         base: main # Or 'main', depending on your default branch name
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
