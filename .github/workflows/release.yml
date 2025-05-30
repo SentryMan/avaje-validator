@@ -39,8 +39,30 @@ jobs:
     - name: Bump version in pom.xml
       run: mvn versions:set -DnewVersion=${{ github.event.inputs.new_version }} -DgenerateBackupPoms=false
 
-    - name: Deploy JAR to Maven Central
-      run: mvn clean deploy -Pcentral
+    # - name: Deploy JAR to Maven Central
+    #   run: mvn clean deploy -Pcentral
+    - name: Update workflow input description with new version
+      # WARNING: This step modifies the workflow file itself. It is highly sensitive to
+      # the exact formatting of the YAML and relies on specific 'sed' patterns.
+      # Any slight change in indentation or phrasing of the original description
+      # might cause this step to fail or corrupt the workflow file.
+      run: |
+        NEW_VERSION_FOR_DESC="${{ github.event.inputs.new_version }}"
+        WORKFLOW_FILE="${{ github.workspace }}/.github/workflows/$(basename ${{ github.workflow_ref }})" # Get current workflow file name
+
+        # Escape forward slashes in the version string for sed
+        ESCAPED_VERSION=$(echo "$NEW_VERSION_FOR_DESC" | sed 's/\//\\\//g')
+
+        # Use sed to find and replace the description line.
+        # This assumes the 'description' line is directly under 'new_version:' and is the only 'description:' on that line.
+        # It targets the line 'description: ' followed by anything and replaces it.
+        sed -i "/^[[:space:]]*new_version:/,/^[[:space:]]*type:/s/^[[:space:]]*description: .*/      description: 'Last deployed version: ${ESCAPED_VERSION}'/" "${WORKFLOW_FILE}"
+
+        # Note: The 'sed' command above tries to confine the search to the 'new_version' block.
+        # If your YAML structure is more complex or changes, this sed might break.
+        # For more robust YAML parsing, a Python script with 'PyYAML' library would be needed,
+        # which would require setting up Python in a separate step.
+      shell: bash # Ensure bash is used for sed
 
       # Push the changes back to the 'master' branch.
     - name: Commit and push version change
