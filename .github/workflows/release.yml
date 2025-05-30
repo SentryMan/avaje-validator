@@ -71,6 +71,7 @@ jobs:
       # It replaces the direct commit and push to master.
       uses: peter-evans/create-pull-request@v6
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
         commit-message: "Bump version to ${{ github.event.inputs.new_version }} and update workflow description"
         branch: "release/${{ github.event.inputs.new_version }}" # Creates a new branch for the PR
         title: "Release: Bump version to ${{ github.event.inputs.new_version }}"
