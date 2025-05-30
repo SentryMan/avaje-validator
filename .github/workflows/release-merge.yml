@@ -21,7 +21,6 @@ jobs:
             exit 1
           fi
           echo "PR title check passed."
-    steps:
       - name: Approve a PR
         run: gh pr review --approve "$PR_URL"
         env:
