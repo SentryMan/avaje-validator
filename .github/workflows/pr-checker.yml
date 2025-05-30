@@ -1,0 +1,37 @@
+name: 🔍 PR Linter/Checker
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened] # Trigger on PR creation, updates, and reopening
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read # Read PR details
+      contents: read # Checkout code if needed for linting/tests
+
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ℹ️ Print PR Details
+        run: |
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "PR Title: ${{ github.event.pull_request.title }}"
+          echo "PR Branch: ${{ github.event.pull_request.head.ref }}"
+          echo "Base Branch: ${{ github.event.pull_request.base.ref }}"
+          echo "PR Author: ${{ github.event.pull_request.user.login }}"
+          echo "Labels: ${{ toJSON(github.event.pull_request.labels.*.name) }}"
+          echo "This workflow was triggered by a pull_request event."
+
+      - name: ✅ Run a dummy linting/test step
+        run: |
+          echo "Simulating linting or tests on the PR..."
+          # In a real scenario, you would run your actual linting, unit tests,
+          # integration tests, or build steps here.
+          # For example:
+          # npm install
+          # npm run lint
+          # npm test
+          echo "PR checks completed successfully!"
