@@ -8,7 +8,19 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'github-actions[bot]'}} && startsWith(github.event.pull_request.title, 'Release: Bump version to')
+    if: ${{ github.actor == 'github-actions[bot]'}}
+    steps:
+      - name: Check PR Title
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          REQUIRED_PREFIX="Release: Bump version to"
+
+          if [[ ! "$PR_TITLE" == "$REQUIRED_PREFIX"* ]]; then
+            echo "::error::PR title does not start with \"$REQUIRED_PREFIX\""
+            echo "Current PR title: \"$PR_TITLE\""
+            exit 1
+          fi
+          echo "PR title check passed."
     steps:
       - name: Approve a PR
         run: gh pr review --approve "$PR_URL"
