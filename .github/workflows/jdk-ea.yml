@@ -2,6 +2,7 @@
 name: JDK EA
 
 on:
+  push:
   pull_request:
   workflow_dispatch:
   schedule:

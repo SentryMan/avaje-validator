@@ -78,6 +78,10 @@ jobs:
         git checkout $PR_BRANCH
         git commit --allow-empty -m "Trigger CI workflows"
         git push origin $PR_BRANCH
+
+        # Remove the empty commit after triggering
+        git reset --hard HEAD~1
+        git push --force-with-lease origin $PR_BRANCH
       env:
         GH_TOKEN: ${{ secrets.PAT }}
 
