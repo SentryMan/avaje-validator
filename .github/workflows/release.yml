@@ -80,6 +80,11 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.PAT }}
 
+    - name: Configure Git
+      run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+
     - name: Approve Pull Request
       if: steps.create-pr.outputs.pull-request-number
       run: |
