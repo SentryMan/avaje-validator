@@ -68,22 +68,17 @@ jobs:
             git config --global user.email "action@github.com"
             git config --global user.name "GitHub Action"
 
-    - name: Trigger PR workflows
+
+    - name: Trigger PR workflows by closing and reopening
       if: steps.create-pr.outputs.pull-request-number
       run: |
-        # Get the PR branch name
-        PR_BRANCH="release/${{ github.event.inputs.new_version }}"
+              # Close the PR
+              gh pr close ${{ steps.create-pr.outputs.pull-request-number }}
 
-        # Trigger workflows on the PR branch by making a small commit
-        git checkout $PR_BRANCH
-        git commit --allow-empty -m "Trigger CI workflows"
-        git push origin $PR_BRANCH
-
-        # Remove the empty commit after triggering
-        git reset --hard HEAD~1
-        git push --force-with-lease origin $PR_BRANCH
+              # Reopen the PR to trigger workflows
+              gh pr reopen ${{ steps.create-pr.outputs.pull-request-number }}
       env:
-        GH_TOKEN: ${{ secrets.PAT }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Approve Pull Request
       if: steps.create-pr.outputs.pull-request-number
