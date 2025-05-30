@@ -1,37 +1,91 @@
-name: 🔍 PR Linter/Checker
+name: 🔍 PR Linter/Checker (Triggered by Workflow Run)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened] # Trigger on PR creation, updates, and reopening
+  workflow_run:
+    workflows: ["🚀 Create Automated PR"] # Name of the workflow that creates the PR
+    types:
+      - completed # Trigger when the specified workflow completes
+    branches:
+      - main # Or 'master' - only trigger if the creating workflow ran on this branch
 
 jobs:
   pr-check:
+    # Only run this job if the creating workflow was successful
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read # Read PR details
-      contents: read # Checkout code if needed for linting/tests
+      pull-requests: write # Needed to fetch PR details and potentially add comments/status
+      contents: read # Needed to checkout the code
 
     steps:
-      - name: ⬇️ Checkout repository
+      - name: ⬇️ Checkout repository (for the PR's head branch)
         uses: actions/checkout@v4
+        with:
+          # Fetch the head branch of the PR that was created by the original workflow
+          # We need to use the GITHUB_TOKEN of this workflow run
+          ref: ${{ github.event.workflow_run.head_branch }}
+          repository: ${{ github.event.workflow_run.head_repository.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }} # Use the default GITHUB_TOKEN for this workflow
 
-      - name: ℹ️ Print PR Details
+      - name: 📥 Download artifact from triggering workflow (optional)
+        # This step is useful if the creating workflow generated any artifacts
+        # that the checker workflow needs, e.g., the PR number.
+        uses: actions/github-script@v7
+        id: get_pr_number
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const workflowRunId = process.env.GITHUB_RUN_ID;
+
+            // Find the workflow run that triggered this one
+            const { data: workflowRuns } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner,
+              repo,
+              workflow_id: 'create-pr.yml', // Or the ID of your 'create-pr' workflow
+              event: 'workflow_dispatch', // Or the event that triggered your 'create-pr'
+              status: 'success',
+              branch: context.ref.split('/').pop(),
+            });
+
+            const triggeringRun = workflowRuns.workflow_runs.find(run => run.id === github.event.workflow_run.id);
+
+            if (triggeringRun) {
+              // Now, get the associated pull requests for that run
+              const { data: pullRequests } = await github.rest.pulls.list({
+                owner,
+                repo,
+                head: `${triggeringRun.head_repository.owner.login}:${triggeringRun.head_branch}`,
+                state: 'open',
+              });
+
+              if (pullRequests.length > 0) {
+                const pr = pullRequests[0];
+                console.log(`Found PR: #${pr.number} - ${pr.title}`);
+                core.setOutput('pr_number', pr.number);
+                core.setOutput('pr_title', pr.title);
+                core.setOutput('pr_head_ref', pr.head.ref);
+                core.setOutput('pr_base_ref', pr.base.ref);
+                core.setOutput('pr_author', pr.user.login);
+              } else {
+                console.log('No open PR found for the triggering workflow run.');
+              }
+            } else {
+              console.log('Could not find the triggering workflow run details.');
+            }
+
+      - name: ℹ️ Print PR Details (from outputs)
+        if: steps.get_pr_number.outputs.pr_number
         run: |
-          echo "PR Number: ${{ github.event.pull_request.number }}"
-          echo "PR Title: ${{ github.event.pull_request.title }}"
-          echo "PR Branch: ${{ github.event.pull_request.head.ref }}"
-          echo "Base Branch: ${{ github.event.pull_request.base.ref }}"
-          echo "PR Author: ${{ github.event.pull_request.user.login }}"
-          echo "Labels: ${{ toJSON(github.event.pull_request.labels.*.name) }}"
-          echo "This workflow was triggered by a pull_request event."
+          echo "PR Number: ${{ steps.get_pr_number.outputs.pr_number }}"
+          echo "PR Title: ${{ steps.get_pr_number.outputs.pr_title }}"
+          echo "PR Branch: ${{ steps.get_pr_number.outputs.pr_head_ref }}"
+          echo "Base Branch: ${{ steps.get_pr_number.outputs.pr_base_ref }}"
+          echo "PR Author: ${{ steps.get_pr_number.outputs.pr_author }}"
+          echo "This workflow was triggered by the completion of 'Create Automated PR'."
 
       - name: ✅ Run a dummy linting/test step
         run: |
           echo "Simulating linting or tests on the PR..."
           # In a real scenario, you would run your actual linting, unit tests,
-          # integration tests, or build steps here.
-          # For example:
-          # npm install
-          # npm run lint
-          # npm test
+          # integration tests, or build steps here on the checked out code.
           echo "PR checks completed successfully!"
