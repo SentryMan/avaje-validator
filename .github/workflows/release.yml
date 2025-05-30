@@ -55,7 +55,7 @@ jobs:
       id: create-pr
       uses: peter-evans/create-pull-request@v6
       with:
-        token: ${{ secrets.PAT }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         commit-message: "Version ${{ github.event.inputs.new_version }}"
         branch: "release/${{ github.event.inputs.new_version }}"
         title: "Release: Version ${{ github.event.inputs.new_version }}"
@@ -68,16 +68,33 @@ jobs:
             git config --global user.email "action@github.com"
             git config --global user.name "GitHub Action"
 
+    - name: Trigger PR workflows
+      if: steps.create-pr.outputs.pull-request-number
+      run: |
+        # Get the PR branch name
+        PR_BRANCH="release/${{ github.event.inputs.new_version }}"
+
+        # Trigger workflows on the PR branch by making a small commit
+        git checkout $PR_BRANCH
+        git commit --allow-empty -m "Trigger CI workflows"
+        git push origin $PR_BRANCH
+
+        # Remove the empty commit after triggering
+        git reset --hard HEAD~1
+        git push --force-with-lease origin $PR_BRANCH
+      env:
+        GH_TOKEN: ${{ secrets.PAT }}
+
     - name: Approve Pull Request
       if: steps.create-pr.outputs.pull-request-number
       run: |
         gh pr review ${{ steps.create-pr.outputs.pull-request-number }} --approve --body "Auto-approving release PR"
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.PAT }}
 
     - name: Enable auto-merge for PR
       if: steps.create-pr.outputs.pull-request-number
       run: |
-        gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} --merge --auto
+        gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} --merge --auto --squash
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
