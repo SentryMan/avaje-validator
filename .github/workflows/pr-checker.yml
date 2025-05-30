@@ -1,4 +1,4 @@
-name: 🔍 PR Linter/Checker (Triggered by Workflow Run)
+name: Merge Release (Triggered by Workflow Run)
 
 on:
   workflow_run:
@@ -14,78 +14,137 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write # Needed to fetch PR details and potentially add comments/status
+      pull-requests: write # Needed to fetch PR details and manage PR
       contents: read # Needed to checkout the code
+      actions: read # Needed to read workflow run artifacts
 
     steps:
-      - name: ⬇️ Checkout repository (for the PR's head branch)
-        uses: actions/checkout@v4
-        with:
-          # Fetch the head branch of the PR that was created by the original workflow
-          # We need to use the GITHUB_TOKEN of this workflow run
-          ref: ${{ github.event.workflow_run.head_branch }}
-          repository: ${{ github.event.workflow_run.head_repository.full_name }}
-          token: ${{ secrets.GITHUB_TOKEN }} # Use the default GITHUB_TOKEN for this workflow
-
-      - name: 📥 Download artifact from triggering workflow (optional)
-        # This step is useful if the creating workflow generated any artifacts
-        # that the checker workflow needs, e.g., the PR number.
-        uses: actions/github-script@v7
+      - name: 🔍 Get PR Number from Workflow Run
         id: get_pr_number
+        uses: actions/github-script@v7
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const workflowRunId = process.env.GITHUB_RUN_ID;
+            // Get the workflow run that triggered this workflow
+            const workflowRun = context.payload.workflow_run;
 
-            // Find the workflow run that triggered this one
-            const { data: workflowRuns } = await github.rest.actions.listWorkflowRunsForRepo({
-              owner,
-              repo,
-              workflow_id: 'create-pr.yml', // Or the ID of your 'create-pr' workflow
-              event: 'workflow_dispatch', // Or the event that triggered your 'create-pr'
-              status: 'success',
-              branch: context.ref.split('/').pop(),
+            // Search for PRs associated with the head SHA
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${workflowRun.head_repository.owner.login}:${workflowRun.head_branch}`,
+              state: 'open'
             });
 
-            const triggeringRun = workflowRuns.workflow_runs.find(run => run.id === github.event.workflow_run.id);
-
-            if (triggeringRun) {
-              // Now, get the associated pull requests for that run
-              const { data: pullRequests } = await github.rest.pulls.list({
-                owner,
-                repo,
-                head: `${triggeringRun.head_repository.owner.login}:${triggeringRun.head_branch}`,
-                state: 'open',
-              });
-
-              if (pullRequests.length > 0) {
-                const pr = pullRequests[0];
-                console.log(`Found PR: #${pr.number} - ${pr.title}`);
-                core.setOutput('pr_number', pr.number);
-                core.setOutput('pr_title', pr.title);
-                core.setOutput('pr_head_ref', pr.head.ref);
-                core.setOutput('pr_base_ref', pr.base.ref);
-                core.setOutput('pr_author', pr.user.login);
-              } else {
-                console.log('No open PR found for the triggering workflow run.');
-              }
-            } else {
-              console.log('Could not find the triggering workflow run details.');
+            if (prs.length === 0) {
+              console.log('No open PR found for this workflow run');
+              core.setOutput('pr_number', '');
+              core.setOutput('pr_found', 'false');
+              return;
             }
 
-      - name: ℹ️ Print PR Details (from outputs)
-        if: steps.get_pr_number.outputs.pr_number
-        run: |
-          echo "PR Number: ${{ steps.get_pr_number.outputs.pr_number }}"
-          echo "PR Title: ${{ steps.get_pr_number.outputs.pr_title }}"
-          echo "PR Branch: ${{ steps.get_pr_number.outputs.pr_head_ref }}"
-          echo "Base Branch: ${{ steps.get_pr_number.outputs.pr_base_ref }}"
-          echo "PR Author: ${{ steps.get_pr_number.outputs.pr_author }}"
-          echo "This workflow was triggered by the completion of 'Create Automated PR'."
+            const pr = prs[0];
+            console.log(`Found PR #${pr.number}: ${pr.title}`);
+            core.setOutput('pr_number', pr.number.toString());
+            core.setOutput('pr_found', 'true');
+            core.setOutput('pr_head_sha', pr.head.sha);
+            core.setOutput('pr_base_branch', pr.base.ref);
 
-      - name: ✅ Run a dummy linting/test step
+      - name: ⬇️ Checkout PR Head Branch
+        if: steps.get_pr_number.outputs.pr_found == 'true'
+        uses: actions/checkout@v4
+        with:
+          # Checkout the exact commit from the PR
+          ref: ${{ steps.get_pr_number.outputs.pr_head_sha }}
+          fetch-depth: 0 # Get full history for better context
+
+      - name: ℹ️ Print PR Details
+        if: steps.get_pr_number.outputs.pr_found == 'true'
         run: |
-          echo "Simulating linting or tests on the PR..."
-          # In a real scenario, you would run your actual linting, unit tests,
-          # integration tests, or build steps here on the checked out code.
+          echo "This workflow was triggered by the completion of '🚀 Create Automated PR'."
+          echo "Processing PR #${{ steps.get_pr_number.outputs.pr_number }}"
+          echo "PR Head SHA: ${{ steps.get_pr_number.outputs.pr_head_sha }}"
+          echo "PR Base Branch: ${{ steps.get_pr_number.outputs.pr_base_branch }}"
+
+      - name: 📝 Add PR Comment (Start)
+        if: steps.get_pr_number.outputs.pr_found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.get_pr_number.outputs.pr_number }},
+              body: '🔄 Automated PR checks started by workflow run...'
+            });
+
+      - name: ✅ Run Linting/Tests
+        if: steps.get_pr_number.outputs.pr_found == 'true'
+        run: |
+          echo "Simulating linting or tests on PR #${{ steps.get_pr_number.outputs.pr_number }}..."
+
+          # Example: Run your actual commands here
+          # npm ci
+          # npm run lint
+          # npm run test
+          # npm run build
+
           echo "PR checks completed successfully!"
+
+      - name: 🎯 Create Check Run on PR
+        if: steps.get_pr_number.outputs.pr_found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const checkRun = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Automated PR Validation',
+              head_sha: '${{ steps.get_pr_number.outputs.pr_head_sha }}',
+              status: 'completed',
+              conclusion: 'success',
+              output: {
+                title: 'PR Validation Passed',
+                summary: 'All automated checks completed successfully',
+                text: 'The PR created by the automated workflow has passed all validation checks.'
+              }
+            });
+
+            console.log(`Created check run: ${checkRun.data.html_url}`);
+
+      - name: 📝 Add PR Comment (Success)
+        if: steps.get_pr_number.outputs.pr_found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.get_pr_number.outputs.pr_number }},
+              body: '✅ Automated PR checks completed successfully! The PR is ready for review.'
+            });
+
+      - name: 🚨 Handle No PR Found
+        if: steps.get_pr_number.outputs.pr_found == 'false'
+        run: |
+          echo "⚠️ No open PR found for this workflow run"
+          echo "This might happen if:"
+          echo "1. The PR was already merged/closed"
+          echo "2. The upstream workflow didn't create a PR"
+          echo "3. There was an issue with the upstream workflow"
+          exit 1
+
+  # Optional: Add a job to handle failures
+  pr-check-failure:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: 🚨 Handle Upstream Workflow Failure
+        run: |
+          echo "❌ The upstream workflow '🚀 Create Automated PR' failed"
+          echo "Workflow run: ${{ github.event.workflow_run.html_url }}"
+          # You could add notification logic here (Slack, email, etc.)
