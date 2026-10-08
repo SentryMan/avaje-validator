@@ -1,10 +1,12 @@
-package io.avaje.validation.constraints;
+package io.avaje.validation;
+
+import static java.lang.annotation.ElementType.FIELD;
+import static java.lang.annotation.ElementType.TYPE;
+import static java.lang.annotation.ElementType.TYPE_USE;
+import static java.lang.annotation.RetentionPolicy.CLASS;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
-
-import static java.lang.annotation.ElementType.*;
-import static java.lang.annotation.RetentionPolicy.CLASS;
 
 /**
  * Marks a type for validation adapter generation
@@ -17,14 +19,13 @@ import static java.lang.annotation.RetentionPolicy.CLASS;
  *
  * <p>This behavior is applied recursively.
  *
- * @deprecated use {@code io.avaje.validation.Valid} instead
+ * <p>Unlike {@code jakarta.validation.Valid} / {@code javax.validation.Valid}, this annotation can
+ * be placed on types to trigger validation adapter generation.
  */
-@Deprecated(forRemoval = true)
 @Retention(CLASS)
 @Target({TYPE, TYPE_USE, FIELD})
 public @interface Valid {
 
   /** Validation groups to use */
   Class<?>[] groups() default {};
-
 }

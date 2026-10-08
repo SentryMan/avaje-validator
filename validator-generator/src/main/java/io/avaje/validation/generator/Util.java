@@ -22,7 +22,8 @@ final class Util {
   private Util() {}
 
   static boolean isValid(Element e) {
-    return AvajeValidPrism.isPresent(e)
+    return CoreValidPrism.isPresent(e)
+      || AvajeValidPrism.isPresent(e)
       || JavaxValidPrism.isPresent(e)
       || JakartaValidPrism.isPresent(e);
   }

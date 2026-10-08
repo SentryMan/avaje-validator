@@ -2,7 +2,7 @@ package org.example;
 
 
 import io.avaje.validation.constraints.NotBlank;
-import io.avaje.validation.constraints.Valid;
+import io.avaje.validation.Valid;
 
 @Valid
 public class Customer {

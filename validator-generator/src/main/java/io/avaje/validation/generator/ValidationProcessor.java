@@ -43,6 +43,7 @@ import io.avaje.prism.GenerateUtils;
 @GenerateUtils
 @GenerateAPContext
 @SupportedAnnotationTypes({
+  CoreValidPrism.PRISM_TYPE,
   AvajeValidPrism.PRISM_TYPE,
   ImportValidPojoPrism.PRISM_TYPE,
   HttpValidPrism.PRISM_TYPE,
@@ -130,6 +131,7 @@ public final class ValidationProcessor extends AbstractProcessor {
     // register custom adapters
     getElements(round, ConstraintAdapterPrism.PRISM_TYPE).ifPresent(this::registerCustomAdapters);
 
+    getElements(round, CoreValidPrism.PRISM_TYPE).ifPresent(this::writeAdapters);
     getElements(round, AvajeValidPrism.PRISM_TYPE).ifPresent(this::writeAdapters);
     getElements(round, HttpValidPrism.PRISM_TYPE).ifPresent(this::writeAdapters);
     getElements(round, JavaxValidPrism.PRISM_TYPE).ifPresent(this::writeAdapters);

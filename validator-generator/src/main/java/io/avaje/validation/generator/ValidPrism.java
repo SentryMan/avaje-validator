@@ -22,20 +22,26 @@ import io.avaje.prism.GeneratePrism;
     name = "AvajeValidPrism",
     superInterfaces = ValidPrism.class)
 @GeneratePrism(
+    value = io.avaje.validation.Valid.class,
+    name = "CoreValidPrism",
+    superInterfaces = ValidPrism.class)
+@GeneratePrism(
     value = io.avaje.http.api.Valid.class,
     name = "HttpValidPrism",
     superInterfaces = ValidPrism.class)
 public interface ValidPrism {
 
   static boolean isPresent(Element e) {
-    return AvajeValidPrism.isPresent(e)
+    return CoreValidPrism.isPresent(e)
+        || AvajeValidPrism.isPresent(e)
         || JakartaValidPrism.isPresent(e)
         || JavaxValidPrism.isPresent(e)
         || HttpValidPrism.isPresent(e);
   }
 
   static boolean isInstance(AnnotationMirror e) {
-    return AvajeValidPrism.getInstance(e) != null
+    return CoreValidPrism.getInstance(e) != null
+        || AvajeValidPrism.getInstance(e) != null
         || JakartaValidPrism.getInstance(e) != null
         || JavaxValidPrism.getInstance(e) != null
         || HttpValidPrism.getInstance(e) != null;
@@ -43,6 +49,7 @@ public interface ValidPrism {
 
   static ValidPrism instance(AnnotationMirror e) {
     return Optional.<ValidPrism>empty()
+        .or(() -> CoreValidPrism.getOptional(e))
         .or(() -> AvajeValidPrism.getOptional(e))
         .or(() -> JakartaValidPrism.getOptional(e))
         .or(() -> JavaxValidPrism.getOptional(e))

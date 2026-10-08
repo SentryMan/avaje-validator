@@ -16,6 +16,7 @@ final class Constants {
 
   public static final Set<String> VALID_ANNOTATIONS =
       Set.of(
+          CoreValidPrism.PRISM_TYPE,
           AvajeValidPrism.PRISM_TYPE,
           HttpValidPrism.PRISM_TYPE,
           JavaxValidPrism.PRISM_TYPE,
