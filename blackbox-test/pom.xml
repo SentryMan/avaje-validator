@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.avaje</groupId>
     <artifactId>avaje-validator-parent</artifactId>
-    <version>2.18-RC2</version>
+    <version>2.18</version>
   </parent>
 
   <artifactId>validator-blackbox-test</artifactId>
@@ -79,7 +79,7 @@
     <dependency>
       <groupId>io.avaje</groupId>
       <artifactId>avaje-http-api</artifactId>
-      <version>3.11</version>
+      <version>3.12</version>
     </dependency>
 
     <!-- test dependencies -->

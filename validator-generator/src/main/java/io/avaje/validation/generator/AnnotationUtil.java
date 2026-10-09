@@ -19,13 +19,15 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.ArrayType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 
 final class AnnotationUtil {
 
   interface Handler {
-    String attributes(AnnotationMirror annotationMirror, Element element, Element target);
+    String attributes(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType);
 
   }
 
@@ -161,10 +163,14 @@ final class AnnotationUtil {
   private AnnotationUtil() {}
 
   static String annotationAttributeMap(AnnotationMirror annotationMirror, Element target) {
+    return annotationAttributeMap(annotationMirror, target, target.asType());
+  }
+
+  static String annotationAttributeMap(AnnotationMirror annotationMirror, Element target, TypeMirror targetType) {
     final var element = APContext.asTypeElement(annotationMirror.getAnnotationType());
     final Handler handler = handlers.get(element.getQualifiedName().toString());
     return Objects.requireNonNullElse(handler, defaultHandler)
-        .attributes(annotationMirror, element, target);
+        .attributes(annotationMirror, element, target, targetType);
   }
 
   static String[] splitString(String input, String delimiter) {
@@ -236,7 +242,7 @@ final class AnnotationUtil {
   static class PatternHandler extends BaseHandler {
 
     @Override
-    public String attributes(AnnotationMirror annotationMirror, Element element, Element target) {
+    public String attributes(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
       return new PatternHandler().writeAttributes(annotationMirror);
     }
 
@@ -259,7 +265,23 @@ final class AnnotationUtil {
             .append(String.join(", ", prism.groups() + ".class"))
             .append(")");
       }
+      if (!prism.payload().isEmpty()) {
+        sb.append(", \"payload\",List.of(").append(classLiterals(prism.payload())).append(")");
+      }
       sb.append(")");
+    }
+
+    private static String classLiterals(List<TypeMirror> types) {
+      final var joined = new StringBuilder();
+      boolean first = true;
+      for (final TypeMirror type : types) {
+        if (!first) {
+          joined.append(", ");
+        }
+        joined.append(type).append(".class");
+        first = false;
+      }
+      return joined.toString();
     }
 
     private static String escape(String value) {
@@ -291,20 +313,27 @@ final class AnnotationUtil {
     }
 
     StandardHandler(AnnotationMirror annotationMirror, Element element, Element target) {
+      this(annotationMirror, element, target, target.asType());
+    }
+
+    StandardHandler(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
       this.annotationMirror = annotationMirror;
       this.element = element;
       this.target = target;
-      this._type = lookupType(target.asType());
+      this._type = lookupType(targetType);
     }
 
     @Override
-    public String attributes(AnnotationMirror annotationMirror, Element element, Element target) {
-      return new StandardHandler(annotationMirror, element, target).writeAttributes();
+    public String attributes(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
+      return new StandardHandler(annotationMirror, element, target, targetType).writeAttributes();
     }
 
     String writeAttributes() {
       validate();
       for (final ExecutableElement member : ElementFilter.methodsIn(element.getEnclosedElements())) {
+        if ("payload".contentEquals(member.getSimpleName())) {
+          validatePayloadType(member);
+        }
         final AnnotationValue value = annotationMirror.getElementValues().get(member);
         final AnnotationValue defaultValue = member.getDefaultValue();
         if (value == null && defaultValue == null) {
@@ -315,6 +344,22 @@ final class AnnotationUtil {
       writeTypeAttribute();
       sb.append(")");
       return sb.toString();
+    }
+
+    private static void validatePayloadType(ExecutableElement member) {
+      final var returnType = member.getReturnType();
+      final var valid =
+          returnType.getKind() == TypeKind.ARRAY
+              && ((ArrayType) returnType)
+                  .getComponentType()
+                  .toString()
+                  .startsWith("java.lang.Class");
+      if (!valid) {
+        logError(
+            member,
+            "payload() must be declared as Class<? extends Payload>[] but is %s",
+            returnType);
+      }
     }
 
     protected void writeTypeAttribute() {
@@ -405,14 +450,14 @@ final class AnnotationUtil {
       this.meta = meta;
     }
 
-    TypeCheckingHandler(SupportedMeta meta, AnnotationMirror annotationMirror, Element element, Element target) {
-      super(annotationMirror, element, target);
+    TypeCheckingHandler(SupportedMeta meta, AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
+      super(annotationMirror, element, target, targetType);
       this.meta = meta;
     }
 
     @Override
-    public String attributes(AnnotationMirror annotationMirror, Element element, Element target) {
-      return new TypeCheckingHandler(meta, annotationMirror, element, target).writeAttributes();
+    public String attributes(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
+      return new TypeCheckingHandler(meta, annotationMirror, element, target, targetType).writeAttributes();
     }
 
     @Override
@@ -432,9 +477,13 @@ final class AnnotationUtil {
       super(annotationMirror, element, target);
     }
 
+    CommonHandler(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
+      super(annotationMirror, element, target, targetType);
+    }
+
     @Override
-    public String attributes(AnnotationMirror annotationMirror, Element element, Element target) {
-      return new CommonHandler(annotationMirror, element, target).writeAttributes();
+    public String attributes(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
+      return new CommonHandler(annotationMirror, element, target, targetType).writeAttributes();
     }
 
     @Override
@@ -464,12 +513,16 @@ final class AnnotationUtil {
     DecimalHandler() {}
 
     @Override
-    public String attributes(AnnotationMirror annotationMirror, Element element, Element target) {
-      return new DecimalHandler(annotationMirror, element, target).writeAttributes();
+    public String attributes(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
+      return new DecimalHandler(annotationMirror, element, target, targetType).writeAttributes();
     }
 
     DecimalHandler(AnnotationMirror annotationMirror, Element element, Element target) {
       super(annotationMirror, element, target);
+    }
+
+    DecimalHandler(AnnotationMirror annotationMirror, Element element, Element target, TypeMirror targetType) {
+      super(annotationMirror, element, target, targetType);
     }
 
     @Override
